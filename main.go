@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,20 +18,289 @@ import (
 
 type userInput struct {
 	Name          string `json:"name"`
-	Age           int    `json:"age"`
+	Age           string `json:"age"`
 	CommuteMethod string `json:"commute_method"`
 	College       string `json:"college"`
 	Hobbies       string `json:"hobbies"`
 }
 
 var userInputs = []userInput{
-	{Name: "Jack", Age: 21, CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
-	{Name: "David", Age: 21, CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
-	{Name: "Austin", Age: 21, CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
+	{Name: "Jack", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
+	{Name: "David", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
+	{Name: "Austin", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
 }
 
-func getUsers(context *gin.Context) {
-	context.IndentedJSON(http.StatusOK, userInputs)
+func getUsersFromSheets(c *gin.Context) {
+	ctx := context.Background()
+	b, err := os.ReadFile("credentials.json")
+	if err != nil {
+		log.Fatalf("Unable to read client secret file: %v", err)
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		log.Fatalf("Unable to parse client secret file to config: %v", err)
+	}
+	client := getClient(config)
+
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		log.Fatalf("Unable to retrieve Sheets client: %v", err)
+	}
+
+	spreadsheetId := "10-CfbfktbeTSMV3tgnIKwaBquzw-RmjS13Tut9A32_s"
+	readRange := "Sheet1"
+
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetId, readRange).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+
+	var users []userInput
+	for _, row := range resp.Values {
+		if len(row) >= 5 { // Ensure that there are enough columns in the row
+			user := userInput{
+				Name:          row[0].(string),
+				Age:           row[1].(string), // Assuming age is a number in the sheet
+				CommuteMethod: row[2].(string),
+				College:       row[3].(string),
+				Hobbies:       row[4].(string),
+			}
+			users = append(users, user)
+		}
+	}
+
+	c.IndentedJSON(http.StatusOK, users)
+}
+
+func getUserFromSheetsbyName(c *gin.Context) {
+	ctx := context.Background()
+	b, err := os.ReadFile("credentials.json")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to read client secret file"})
+		return
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to parse client secret file to config"})
+		return
+	}
+	client := getClient(config)
+
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve Sheets client"})
+		return
+	}
+
+	spreadsheetID := "10-CfbfktbeTSMV3tgnIKwaBquzw-RmjS13Tut9A32_s"
+	readRange := "Sheet1"
+
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve data from Google Sheets"})
+		return
+	}
+
+	name := c.Param("name")
+	var user userInput
+	found := false
+
+	for _, row := range resp.Values {
+		if len(row) >= 5 {
+			if row[0].(string) == name {
+				user = userInput{
+					Name:          row[0].(string),
+					Age:           row[1].(string), // Assuming age is a string in the sheet
+					CommuteMethod: row[2].(string),
+					College:       row[3].(string),
+					Hobbies:       row[4].(string),
+				}
+				found = true
+				break
+			}
+		}
+	}
+
+	if found {
+		c.IndentedJSON(http.StatusOK, user)
+	} else {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
+	}
+}
+
+func deleteUserFromSheets(c *gin.Context) {
+	ctx := context.Background()
+	b, err := os.ReadFile("credentials.json")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to read client secret file"})
+		return
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to parse client secret file to config"})
+		return
+	}
+	client := getClient(config)
+
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve Sheets client"})
+		return
+	}
+
+	spreadsheetID := "10-CfbfktbeTSMV3tgnIKwaBquzw-RmjS13Tut9A32_s"
+	readRange := "Sheet1"
+
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve data from Google Sheets"})
+		return
+	}
+
+	name := c.Param("name")
+	var userRowIndex int
+	found := false
+
+	for rowIndex, row := range resp.Values {
+		if len(row) >= 5 {
+			if row[0].(string) == name {
+				userRowIndex = rowIndex
+				found = true
+				break
+			}
+		}
+	}
+
+	rowToDelete := userRowIndex + 1
+
+	if found {
+		deleteRequest := sheets.DeleteDimensionRequest{
+			Range: &sheets.DimensionRange{
+				SheetId:    getSheetID(spreadsheetID, "Sheet1", srv),
+				Dimension:  "ROWS",
+				StartIndex: int64(rowToDelete) - 1, // Subtract 1 because row indices are 0-based.
+				EndIndex:   int64(rowToDelete),
+			},
+		}
+
+		// Execute the request to delete the row.
+		_, err = srv.Spreadsheets.BatchUpdate(spreadsheetID, &sheets.BatchUpdateSpreadsheetRequest{
+			Requests: []*sheets.Request{
+				&sheets.Request{
+					DeleteDimension: &deleteRequest,
+				},
+			},
+		}).Context(ctx).Do()
+
+		if err != nil {
+			log.Fatalf("Error deleting row: %v", err)
+		}
+
+		fmt.Printf("Row %d deleted successfully.\n", rowToDelete)
+
+		c.IndentedJSON(http.StatusOK, gin.H{"message": "user deleted"})
+	} else {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
+	}
+}
+
+func getSheetID(spreadsheetID, sheetName string, srv *sheets.Service) int64 {
+	resp, err := srv.Spreadsheets.Get(spreadsheetID).Context(context.Background()).Do()
+	if err != nil {
+		log.Printf("Unable to retrieve spreadsheet: %v", err)
+		return -1
+	}
+
+	for _, sheet := range resp.Sheets {
+		if sheet.Properties.Title == sheetName {
+			return sheet.Properties.SheetId
+		}
+	}
+
+	log.Printf("Sheet not found: %s", sheetName)
+	return -1
+}
+
+func updateUserInSheets(c *gin.Context) {
+	ctx := context.Background()
+	b, err := os.ReadFile("credentials.json")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to read client secret file"})
+		return
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to parse client secret file to config"})
+		return
+	}
+	client := getClient(config)
+
+	srv, err := sheets.NewService(ctx, option.WithHTTPClient(client))
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve Sheets client"})
+		return
+	}
+
+	spreadsheetID := "10-CfbfktbeTSMV3tgnIKwaBquzw-RmjS13Tut9A32_s"
+	readRange := "Sheet1"
+
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to retrieve data from Google Sheets"})
+		return
+	}
+
+	name := c.Param("name")
+	var userRowIndex int
+	found := false
+
+	for rowIndex, row := range resp.Values {
+		if len(row) >= 5 {
+			if row[0].(string) == name {
+				userRowIndex = rowIndex
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		c.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
+		return
+	}
+
+	// Extract the updated user data from the request body
+	var updatedUser userInput
+	if err := c.BindJSON(&updatedUser); err != nil {
+		c.IndentedJSON(http.StatusBadRequest, gin.H{"message": "invalid JSON data"})
+		return
+	}
+
+	// Update the user's data in the spreadsheet
+	writeRange := fmt.Sprintf("Sheet1!A%d:E%d", userRowIndex+1, userRowIndex+1)
+	var values [][]interface{}
+	values = append(values, []interface{}{updatedUser.Name, updatedUser.Age, updatedUser.CommuteMethod, updatedUser.College, updatedUser.Hobbies})
+
+	vr := &sheets.ValueRange{
+		Values: values,
+	}
+
+	_, err = srv.Spreadsheets.Values.Update(spreadsheetID, writeRange, vr).ValueInputOption("RAW").Do()
+	if err != nil {
+		log.Printf("Error updating user in Google Sheets: %v", err)
+		c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Unable to update user in Google Sheets"})
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, gin.H{"message": "user updated"})
 }
 
 func addUser(context *gin.Context) {
@@ -49,74 +317,6 @@ func addUser(context *gin.Context) {
 	}
 
 	context.IndentedJSON(http.StatusCreated, newUser)
-}
-
-func getUser(context *gin.Context) {
-	name := context.Param("name")
-	userInput, err := getUserByName(name)
-
-	if err != nil {
-		context.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
-		return
-	}
-
-	context.IndentedJSON(http.StatusOK, userInput)
-}
-
-func updateUser(context *gin.Context) {
-	name := context.Param("name")
-	index, err := getUserByNameWithIndex(name)
-
-	if err != nil {
-		context.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
-		return
-	}
-
-	var updatedUser userInput
-	if err := context.BindJSON(&updatedUser); err != nil {
-		context.IndentedJSON(http.StatusBadRequest, gin.H{"message": "invalid JSON data"})
-		return
-	}
-
-	// Update the user record with the new data
-	userInputs[index] = updatedUser
-
-	context.IndentedJSON(http.StatusOK, updatedUser)
-}
-
-func deleteUser(context *gin.Context) {
-	name := context.Param("name")
-	index, err := getUserByNameWithIndex(name)
-
-	if err != nil {
-		context.IndentedJSON(http.StatusNotFound, gin.H{"message": "user not found"})
-		return
-	}
-
-	// Remove the user from the slice
-	userInputs = append(userInputs[:index], userInputs[index+1:]...)
-
-	context.IndentedJSON(http.StatusOK, gin.H{"message": "user deleted"})
-}
-
-//getUserByName and getUserByNameWithIndex are both used as helper functions to navigate within the storage
-
-func getUserByName(name string) (*userInput, error) {
-	for i, t := range userInputs {
-		if t.Name == name {
-			return &userInputs[i], nil
-		}
-	}
-	return nil, errors.New("user not found")
-}
-
-func getUserByNameWithIndex(name string) (int, error) {
-	for i, t := range userInputs {
-		if t.Name == name {
-			return i, nil
-		}
-	}
-	return -1, errors.New("user not found")
 }
 
 // These functions are used for the google sheets API
@@ -216,10 +416,10 @@ func main() {
 	//initialize the router using gin
 	router := gin.Default()
 
-	router.GET("/getuser", getUsers)
-	router.GET("/getuser/:name", getUser)
-	router.PATCH("/updateuser/:name", updateUser)
-	router.DELETE("/deleteuser/:name", deleteUser)
+	router.GET("/getuser", getUsersFromSheets)
+	router.GET("/getuser/:name", getUserFromSheetsbyName)
+	router.PUT("/updateuser/:name", updateUserInSheets)
+	router.POST("/deleteuser/:name", deleteUserFromSheets)
 	router.POST("/adduser", addUser)
 	router.Run("localhost:4000")
 
