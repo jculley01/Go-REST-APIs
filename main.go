@@ -24,12 +24,6 @@ type userInput struct {
 	Hobbies       string `json:"hobbies"`
 }
 
-var userInputs = []userInput{
-	{Name: "Jack", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
-	{Name: "David", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
-	{Name: "Austin", Age: "21", CommuteMethod: "Bike", College: "Boston University", Hobbies: "Golf"},
-}
-
 func getUsersFromSheets(c *gin.Context) {
 	ctx := context.Background()
 	b, err := os.ReadFile("credentials.json")
@@ -309,8 +303,6 @@ func addUser(context *gin.Context) {
 	if err := context.BindJSON(&newUser); err != nil {
 		return
 	}
-
-	userInputs = append(userInputs, newUser)
 	if err := addUsertoGoogleSheets(newUser); err != nil {
 		context.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Failed to store data in Google Sheets"})
 		return
